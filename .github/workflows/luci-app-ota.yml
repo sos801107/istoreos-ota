@@ -39,7 +39,7 @@ jobs:
         git clone --depth=1 https://github.com/istoreos/istoreos.git -b istoreos-24.10
         mv ./istoreos/package/diy/luci-app-ota  ./luci-app-ota
         rm -rf ./istoreos/package/diy
-        sed -i 's/"https://fw0.koolcenter.com/iStoreOS"/"https://github.com/Jaykwok2999/istoreos-actions/releases/download"/g' luci-app-alist/root/usr/share/luci/menu.d/luci-app-alist.json
+        sed -i 's/"fw0.koolcenter.com/iStoreOS"/"github.com/Jaykwok2999/istoreos-actions/releases/download"/g' luci-app-alist/root/usr/share/luci/menu.d/luci-app-alist.json
         
         
     - name: Apply
