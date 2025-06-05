@@ -41,6 +41,7 @@ jobs:
         rm -rf ./istoreos/package/diy
         rm -rf ./luci-app-ota/root/bin/ota
         cp -af ./.github/diy/ota ./luci-app-ota/root/bin/ota
+        rm -rf ./istoreos
         
     - name: Apply
       run: |
