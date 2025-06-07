@@ -37,8 +37,8 @@ jobs:
         rm -rf ./fw_download_tool
          
         git clone --depth=1 https://github.com/wixxm/wikjxwrt-feeds.git -b main
-        mv ./wikjxwrt-packages/fw_download_tool  ./fw_download_tool
-        rm -rf ./wikjxwrt-packages
+        mv ./wikjxwrt-feeds/fw_download_tool  ./fw_download_tool
+        rm -rf ./wikjxwrt-feeds
         
         
     - name: Apply
