@@ -36,12 +36,12 @@ jobs:
 
         rm -rf ./luci-app-ota
          
-        git clone --depth=1 https://github.com/istoreos/istoreos.git -b istoreos-24.10
-        mv ./istoreos/package/diy/luci-app-ota  ./luci-app-ota
-        rm -rf ./istoreos/package/diy
-        rm -rf ./luci-app-ota/root/bin/ota
-        cp -af ./.github/diy/ota ./luci-app-ota/root/bin/ota
-        rm -rf ./istoreos
+        git clone --depth=1 https://github.com/wixxm/wikjxwrt-packages.git -b main
+        mv ./wikjxwrt-packages/luci-app-ota  ./luci-app-ota
+        rm -rf ./wikjxwrt-packages
+        rm -rf ./luci-app-ota/root/etc/config/ota
+        cp -af ./.github/diy/ota ./luci-app-ota/root/etc/config
+        
         
     - name: Apply
       run: |
