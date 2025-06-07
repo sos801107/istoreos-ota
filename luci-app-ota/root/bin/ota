@@ -1,32 +1,16 @@
 #!/bin/sh
-# author jjm2473
 
-mirrors() {
-    local url="$1"
-    case "$url" in
-        https://github.com/Jaykwok2999/istoreos-actions/releases/download*|\
-        https://github.com/Jaykwok2999/istoreos-actions/releases/download*)
-            local path=$(echo "$url" | sed -E 's#^https?://[^/]+/(.*)#\1#')
-            # echo "https://github.com/Jaykwok2999/istoreos-actions/releases/$path"
-            echo "https://github.com/Jaykwok2999/istoreos-actions/releases/$path"
-        ;;
-    esac
-    echo "$url"
-    return 0
-}
+. /etc/os-release
+. /lib/functions/uci-defaults.sh
 
-if [ -f /lib/upgrade/ota.sh ]; then
-    . /lib/upgrade/ota.sh
-    export_ota_url
-fi
-
-if [ -z "$OTA_URL_BASE" ]; then
-    echo "Unsupported device." >&2
-    exit 255
-fi
-
+API=$(uci -q get ota.config.api_url)
 WRLOCK=/var/lock/ota_background.lock
-STLOCK=/var/lock/ota_status.lock
+
+# armsr/armv8
+[ "$OPENWRT_BOARD" = "armsr/armv8" ] && alias board_name="echo armsr,armv8"
+
+# x86_64
+[ $(uname -m) = "x86_64" ] && alias board_name="echo x86_64"
 
 action=${1}
 shift
@@ -35,162 +19,103 @@ sha256() {
     sha256sum $1 | cut -d' ' -f1
 }
 
-alias fcurl='curl -L --fail --show-error'
-
 download() {
-    local img=$1
-    local sum=$2
-    exec 300>$STLOCK
-    flock 300
-    touch /tmp/firmware.img.part
-    echo >/tmp/firmware.img.progress
-    rm -f /tmp/firmware.img.sha256sum
-    flock -u 300
+    read_json
     if [ -f /tmp/firmware.img ]; then
         echo "Checking existed firmware.img..." >> /tmp/firmware.img.progress
-        if [ "`sha256 /tmp/firmware.img`" = "$sum" ]; then
-            flock 300
-            echo $sum > /tmp/firmware.img.sha256sum;
-            rm -f /tmp/firmware.img.part
-            rm -f /tmp/firmware.img.progress
-            flock -u 300
+        if [ "`sha256 /tmp/firmware.img`" = "$FW_SHA256SUM" ]; then
             return 0;
         else
             echo "Check failed, redownload" >> /tmp/firmware.img.progress
             rm -f /tmp/firmware.img
         fi
     fi
-    local pid url
-    mirrors "$OTA_URL_BASE/$img" | while read; do
-        url="$REPLY"
-        echo "Try $url" >>/tmp/firmware.img.progress
-        flock 300
-        echo "#=#=#" >>/tmp/firmware.img.progress
-        fcurl --connect-timeout 5 --progress-bar -o /tmp/firmware.img.part "$url" 2>>/tmp/firmware.img.progress &
-        pid="$!"
-        echo "$pid" > /var/run/ota/download.pid
-        flock -u 300
-        if wait $pid; then
-            rm -f /var/run/ota/download.pid
+    touch /tmp/firmware.img.progress
+    fw_download_tool "$FW_URL" -o /tmp/firmware.img.part -k -L -4 > /tmp/firmware.img.progress 2>&1 &
+    echo "$! $PPID" > /var/run/ota/download.pid
+    while true; do
+        progress=$(grep -c "100.00%" /tmp/firmware.img.progress)
+        if [ "$progress" -ge "1" ]; then
             echo "Checking new firmware.img.part..." > /tmp/firmware.img.progress
-            if [ "`sha256 /tmp/firmware.img.part`" = "$sum" ]; then
-                flock 300
-                mv /tmp/firmware.img.part /tmp/firmware.img && echo $sum > /tmp/firmware.img.sha256sum
-                rm -f /tmp/firmware.img.progress
-                flock -u 300
-                return 0
-            else
-                echo "Checksum failed!" >>/tmp/firmware.img.progress
-            fi
-        else
-            # on Terminated $? == 143, on Timeout $? == 28
-            local ecode=$?
-            echo >>/tmp/firmware.img.progress
-            if [ $ecode -eq 143 ]; then
-                echo "Canceled!" >> /tmp/firmware.img.progress
-                break
-            fi
+            break
         fi
-        flock 300
-        sed -i '/\r/d' /tmp/firmware.img.progress
-        flock -u 300
+        sleep 1
     done
-    rm -f /var/run/ota/download.pid
-    rm -f /tmp/firmware.img.part
-    return 1
+    if [ "`sha256 /tmp/firmware.img.part`" = "$FW_SHA256SUM" ]; then
+        mv /tmp/firmware.img.part /tmp/firmware.img && echo $FW_SHA256SUM > /tmp/firmware.img.sha256sum
+        rm -f /tmp/firmware.img.progress
+        return 0
+    else
+        echo "Checksum failed!" >>/tmp/firmware.img.progress
+        sleep 1
+        rm -rf /tmp/firmware.img.part
+        return 1
+    fi
 }
 
 lock_download() {
     local lock="$WRLOCK"
     exec 200>$lock
     flock -n 200 || return
-    download $1 $2
+    download
     flock -u 200
 }
 
-prepare_check() {
-    local line
-    local release=`grep 'DISTRIB_RELEASE=' /etc/openwrt_release | sed -E "s/.*'(.+)'.*/\1/"`
-    local revision=`grep 'DISTRIB_REVISION=' /etc/openwrt_release | sed -E "s/.*'(.+)'.*/\1/" | cut -d'-' -f1`
-    local current="$release-$revision"
-    local latest=0
-    cat /dev/null > /var/run/ota/ota.log
-    fcurl --connect-timeout 5 -o /var/run/ota/ota.latest "$OTA_URL_BASE/version.latest" || { rm -f /var/run/ota/ota.latest ; return 255; }
-    if head -1 /var/run/ota/ota.latest | grep -Fq "$current"; then
-        latest=1
-        current=""
-    fi
-    fcurl --connect-timeout 5 -o /var/run/ota/ota.index "$OTA_URL_BASE/version.index" || return 255;
-    head -5 /var/run/ota/ota.index | while read line; do
-        if [ -z "$line" -o "$line" = "$current" ]; then
-            break
-        fi
-        echo "<h3>`echo $line | sed 's/-/ /'`</h3><pre>" >> /var/run/ota/ota.log
-        fcurl --connect-timeout 1 "$OTA_URL_BASE/log/$line.log" >> /var/run/ota/ota.log 2>/dev/null
-        echo "</pre>" >> /var/run/ota/ota.log
-    done
-    [ "`wc -l /var/run/ota/ota.log | cut -d' ' -f1`" -eq 0 ] && return 1
-    [ "`wc -l /var/run/ota/ota.index | cut -d' ' -f1`" -gt 5 ] && echo "<a href=\"$OTA_URL_BASE/\" onclick=\"void(0)\" target=\"_blank\">More</a>" >> /var/run/ota/ota.log
-    fcurl --connect-timeout 1 "$OTA_URL_BASE/ota.footer.html" >> /var/run/ota/ota.log 2>/dev/null
-    return $latest
-}
-
-# 0: found newer fw, 1: already newest fw, 2: found running task, *: err
+# 0: found newer fw, 1: already newest fw, *: err
 do_check() {
-    local ret=0
-    local lock="$WRLOCK"
-    exec 200>$lock
-    if flock -n 200; then
-        prepare_check
-        ret=$?
-        flock -u 200 >/dev/null 2>&1
-    elif [ -f /tmp/firmware.img.progress -o -f /tmp/firmware.img.sha256sum ]; then
-        ret=2
+    url_check=$(curl -I -o /dev/null -s -w %{http_code} "$API")
+    [ "$url_check" -ne 200 ] && exit 255
+
+    curl -s "$API" > /var/run/ota/fw.json
+    read_json
+
+    NEW_VERSION=$(basename $FW_URL | sed -E 's/^([a-zA-Z0-9]+-[a-zA-Z0-9]+)-.*/\1/')
+
+    # 提取当前固件时间戳
+    RELEASE_TIMESTAMP_STR=$(echo "$OPENWRT_RELEASE" | grep -oE '[0-9]{14}')
+    if [ -n "$RELEASE_TIMESTAMP_STR" ]; then
+        DATE_STR="$(echo $RELEASE_TIMESTAMP_STR | sed -E 's/^([0-9]{4})([0-9]{2})([0-9]{2})([0-9]{2})([0-9]{2})([0-9]{2})$/\1-\2-\3 \4:\5:\6/')"
+        CURRENT_TIMESTAMP=$(TZ="UTC" date -d "$DATE_STR" +%s)
+        CURRENT_TIME_HUMAN=$(TZ="UTC" date -d "@$CURRENT_TIMESTAMP" "+%Y-%m-%d %H:%M:%S")
     else
-        echo "lock failed!" >&2
+        CURRENT_TIMESTAMP=0
+        CURRENT_TIME_HUMAN="N/A"
+    fi
+
+    # 新固件构建时间（UTC）
+    FW_BUILD_TIME_HUMAN=$(TZ="UTC" date -d "@$FW_BUILD_DATE" "+%Y-%m-%d %H:%M:%S")
+
+    # 清理 PRETTY_NAME（去掉末尾的 '-'）
+    CLEAN_PRETTY_NAME=$(echo "$PRETTY_NAME" | sed 's/-$//')
+
+    if [ "$CURRENT_TIMESTAMP" -lt "$FW_BUILD_DATE" ]; then
+        echo "<h3>Model:&nbsp;&nbsp;<font color=\"green\">$(board_name)</font><br/>Current Version:&nbsp;&nbsp;<font color=\"green\">$CLEAN_PRETTY_NAME</font><br/>Build Time:&nbsp;&nbsp;<font color=\"Orange\">${CURRENT_TIME_HUMAN} UTC</font></h3>"
+        echo "<h3>New Version:&nbsp;&nbsp;<font color=\"green\">$NEW_VERSION</font><br/>Build Time:&nbsp;&nbsp;<font color=\"green\">${FW_BUILD_TIME_HUMAN} UTC</font></h3>"
+        return 0
+    elif [ "$CURRENT_TIMESTAMP" -ge "$FW_BUILD_DATE" ]; then
+        return 1
+    else
         return 255
     fi
-
-    if [ "$ret" -eq 0 -o "$ret" -eq 2 ]; then
-        # output
-        echo "<pre>"
-        sed -E '1 s/^\[.*\]\((.+)\)\s*$/\1/' /var/run/ota/ota.latest
-        echo "</pre>"
-        echo "<br><h2>ChangeLog:</h2>"
-    fi
-    [ "$ret" -eq 0 -o "$ret" -eq 1 -o "$ret" -eq 2 ] && cat /var/run/ota/ota.log
-    return $ret
 }
 
 # async download
 do_download(){
-    local img=`head -1 /var/run/ota/ota.latest | sed -E 's/.*\((.+)\).*/\1/'`
-    local sum=`head -3 /var/run/ota/ota.latest | grep '^SHA256: ' | cut -d' ' -f2`
-    [ -z "$img" -o -z "$sum" ] && { echo "do check first" >&2 ; return 254; }
-    lock_download $img $sum &
+    [ ! -f "/var/run/ota/fw.json" ] && { echo "do check first" >&2 ; return 254; }
+    lock_download &
     return 0
 }
 
-# 0: done, 1: downloading, 2: failed, 254: wrong state, *: err
+# 0: done, 1: downloading, 2: failed, *: err
 do_progress() {
-    local sum=`head -3 /var/run/ota/ota.latest | grep '^SHA256: ' | cut -d' ' -f2`
-    [ -z "$sum" ] && { echo "do check first" >&2 ; return 254; }
-    [ -f /tmp/firmware.img.sha256sum ] && [ "`cat /tmp/firmware.img.sha256sum`" = "$sum" ] && return 0
+    read_json
+    [ -f /tmp/firmware.img.sha256sum ] && [ "`cat /tmp/firmware.img.sha256sum`" = "$FW_SHA256SUM" ] && return 0
     [ -f /tmp/firmware.img.progress ] || { echo "download not in progress" >&2 ; return 254; }
     [ -f /tmp/firmware.img.part ] && { cat /tmp/firmware.img.progress | tr '\r' '\n' | tail -n1; return 1; }
     tail -1 /tmp/firmware.img.progress | grep -Fq 'Canceled!' && { echo "Canceled"; return 2; }
-    cat /tmp/firmware.img.progress | tr '\r' '\n' | grep -v '^$' | tail -n1 >&2
-    return 3
-}
-
-do_progress_locked() {
-    local ret
-    exec 300>$STLOCK
-    flock -s 300
-    do_progress
-    ret=$?
-    flock -u 300
-    return $ret
+    tail -1 /tmp/firmware.img.progress | grep -Fq 'Checksum failed!' && { echo "Checksum failed!"; return 254; }
+    grep -v '\r' /tmp/firmware.img.progress >&2
+    return 1
 }
 
 do_cancel() {
@@ -198,14 +123,23 @@ do_cancel() {
         local pid=`cat /var/run/ota/download.pid`
         if [ -n "$pid" ]; then
             kill -TERM $pid;
-            while kill -0 $pid >/dev/null 2>&1; do
+            while kill -9 $pid >/dev/null 2>&1; do
                 if ! sleep 1; then
                     break
                 fi
             done
+            rm -rf /tmp/firmware.img* /var/lock/ota_background.lock /var/lock/ota_api.lock /var/run/ota/download.pid
+            echo "" >> /tmp/firmware.img.progress
+            echo "Canceled!" >> /tmp/firmware.img.progress
         fi
     fi
     return 0
+}
+
+read_json(){
+    FW_BUILD_DATE=$(jsonfilter -i /var/run/ota/fw.json -e "@['$(board_name)'][0]['build_date']")
+    FW_SHA256SUM=$(jsonfilter -i /var/run/ota/fw.json -e "@['$(board_name)'][0]['sha256sum']")
+    FW_URL=$(jsonfilter -i /var/run/ota/fw.json -e "@['$(board_name)'][0]['url']")
 }
 
 ota_init(){
@@ -231,7 +165,7 @@ case $action in
         do_download
     ;;
     "progress")
-        do_progress_locked
+        do_progress
     ;;
     "cancel")
         do_cancel

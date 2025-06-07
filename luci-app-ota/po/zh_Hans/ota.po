@@ -2,61 +2,52 @@ msgid ""
 msgstr "Content-Type: text/plain; charset=UTF-8"
 
 msgid "OTA"
-msgstr ""
+msgstr "在线升级"
 
 msgid "Already the latest firmware"
-msgstr ""
+msgstr "已经是最新固件"
 
 msgid "Check update"
-msgstr ""
+msgstr "检查更新"
 
 msgid "Found new firmware"
-msgstr ""
+msgstr "发现新固件"
 
 msgid "Download firmware"
-msgstr ""
+msgstr "下载固件"
 
 msgid "Cancel download"
-msgstr ""
+msgstr "取消下载"
 
 msgid "Firmware downloaded"
-msgstr ""
+msgstr "固件已下载"
 
 msgid "Flash image..."
-msgstr ""
-
-msgid "Flash image"
-msgstr ""
+msgstr "刷写固件..."
 
 msgid "Checking..."
-msgstr ""
+msgstr "检查中..."
 
 msgid "Check failed"
-msgstr ""
+msgstr "检查失败"
 
 msgid "Downloading"
-msgstr ""
+msgstr "下载中"
 
 msgid "Download canceled"
-msgstr ""
+msgstr "下载已取消"
 
 msgid "Download failed"
-msgstr ""
+msgstr "下载失败"
 
 msgid "Upgrade firmware On the Air"
-msgstr ""
+msgstr "在线升级固件"
 
 msgid "Check and upgrade firmware from the Internet"
-msgstr ""
+msgstr "通过网络检查和更新固件"
 
 msgid "The latest firmware"
-msgstr ""
+msgstr "最新固件"
 
 msgid "The image file does not contain a supported format. Maybe try again later."
-msgstr ""
-
-msgid "History Log"
-msgstr ""
-
-msgid "Found downloading firmware, will show progress"
-msgstr ""
+msgstr "镜像文件格式不支持或损坏。也许稍候再试试"
