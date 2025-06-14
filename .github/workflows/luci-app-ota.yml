@@ -41,6 +41,8 @@ jobs:
         rm -rf ./wikjxwrt-packages
         rm -rf ./luci-app-ota/root/etc/config/ota
         cp -af ./.github/diy/ota ./luci-app-ota/root/etc/config
+        rm -rf ./luci-app-ota/root/bin/ota
+        cp -af ./.github/diy/bin/ota ./luci-app-ota/root/bin/
         
         
     - name: Apply
