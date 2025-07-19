@@ -1,3 +1,3 @@
 
 config ota 'config'
-	option api_url 'https://github.71557.dpdns.org/https://raw.githubusercontent.com/sos801107/iStoreOS/refs/heads/api/opfw.json'
+	option api_url 'https://github.abskoop.workers.dev/https://raw.githubusercontent.com/sos801107/iStoreOS/refs/heads/api/opfw.json'
